@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<style>
+    body { margin:0; padding:0; }
+    #map { position:absolute; top:0; bottom:0; right: 0; left: 0; width:100%; }
+
+    .hutbagger_img {
+        width: 100px;
+    }
+    .leaflet-control-custom-menu {
+        display: none;
+        background: white;
+        border: 1px solid #ccc;
+        padding: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .leaflet-control-custom-menu ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .leaflet-control-custom-menu li {
+        padding: 5px 10px;
+        cursor: pointer;
+    }
+    .leaflet-control-custom-menu li:hover {
+        background: #eee;
+    }
+</style>
+
+</head>
+<body>
+<div id="map"></div>
+</body>
+
+<!-- leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+
+<!-- L.esri -->
+<script src="https://unpkg.com/esri-leaflet/dist/esri-leaflet.js"></script>
+
+<!-- L.draw -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.4.2/leaflet.draw.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.4.2/leaflet.draw.js"></script>
+
+
+
+    <script>
+        colorValue = "#ff0000";
+
+        function setCookie(cname, cvalue, exdays) {
+            const d = new Date();
+            d.setTime(d.getTime() + (exdays*24*60*60*1000));
+            let expires = "expires="+ d.toUTCString();
+            document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+        }
+
+        function getCookie(cname) {
+            let name = cname + "=";
+            let decodedCookie = decodeURIComponent(document.cookie);
+            let ca = decodedCookie.split(';');
+            for(let i = 0; i <ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) == ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) == 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return "";
+        }
+
+        function convertStravaTMSToXYZ(url) {
+            // Replace '{switch:a,b,c}' with 'a'
+            url = url.replace('{switch:a,b,c}', 'a');
+        
+            // Remove 'tms:' if present
+            url = url.replace('tms:', '');
+        
+            // Replace '{zoom}' with '{z}'
+            url = url.replace('{zoom}', '{z}');
+        
+            return url;
+        }
+
+        function downloadGeoJSON(filename, geoJSONString) {
+            // Step 1: Create a Blob from the GeoJSON string
+            const blob = new Blob([geoJSONString], { type: 'application/geo+json' });
+        
+            // Step 2: Create a URL for the Blob
+            const url = URL.createObjectURL(blob);
+        
+            // Step 3: Create an anchor element
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename; // Set the filename
+        
+            // Step 4: Programmatically click the link to trigger the download
+            a.click();
+        
+            // Clean up the URL.createObjectURL to avoid memory leaks
+            URL.revokeObjectURL(url);
+        }
+
+
+        function createHutBaggerMarkerLayer(huts) {
+            var markerGroup = L.layerGroup();
+            var hutEntries = Object.entries(huts); // Convert the object to an array of its entries
+            for (var i = 0; i < hutEntries.length; i++) {
+                var hut = hutEntries[i][1]; // The value of the entry is at index 1
+                var mark = L.marker([hut.latitude, hut.longitude]);
+                if (hut.photo) {
+                    mark.bindPopup("<b>" + hut.name + "</b><br><img class=\"hutbagger_img\" src=\"" + hut.photo.small + "\"><br><a href=\"https://hutbagger.co.nz/huts/" + hut.url + "\">HutBagger</a>");
+                } else {
+                    mark.bindPopup("<b>" + hut.name + "</b><br><a href=\"https://hutbagger.co.nz/huts/" + hut.url + "\">HutBagger</a>");
+                }
+                
+                mark.addTo(markerGroup);
+            }
+            
+            return markerGroup;
+        }
+
+        function createDOCTrackMarkerLayer(huts) {
+            var markerGroup = L.layerGroup();
+            var hutEntries = Object.entries(huts); // Convert the object to an array of its entries
+            for (var i = 0; i < hutEntries.length; i++) {
+                var hut = hutEntries[i][1]; // The value of the entry is at index 1
+                for (var j = 0; j < hut.line.length; j++) {
+                    coords = hut.line[j].map(coords => [coords[1], coords[0]]);
+                    var line = L.polyline(coords);
+                    line.addTo(markerGroup);
+                    
+                }
+            }
+            
+            return markerGroup;
+        }
+
+        function fetchDataHutBaggerHuts() {
+            //const data = {{hutbaggerHuts | safe}};
+            return {};
+        }
+
+        function fetchDataDOCTracks() {
+            //const data = {{docTracks | safe}};
+            return {};
+        }
+                    
+
+        var mainMap = L.map('map').setView([-40.114852, 176.022541], 5);
+
+        mainMap.zoomControl.setPosition('topright');
+        
+        
+        var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        });
+
+        var topo50 = L.tileLayer('https://tiles-cdn.koordinates.com/services;key=5c71a418664c4f6ab2ac7496fb65e4e5/tiles/v4/layer=50767/EPSG:3857/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        }).addTo(mainMap);
+
+        var topo50_2009 = L.tileLayer('http://au.mapspast.org.nz/3857/topo50-2009/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms_1999 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms260-1999/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms_1989 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms260-1989/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms1_1979 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms1-1979/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms1_1969 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms1-1969/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms1_1959 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms1-1959/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms15_1949 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms15-1949/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms13_1939 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms13-1939/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms13_1929 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms13-1929/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms13_1919 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms13-1919/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms13_1909 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms13-1909/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var nzms13_1899 = L.tileLayer('http://au.mapspast.org.nz/3857/nzms13-1899/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+                    
+        var linz_10m_imagery = L.tileLayer('https://tiles-cdn.koordinates.com/services;key=5c71a418664c4f6ab2ac7496fb65e4e5/tiles/v4/layer=109401/EPSG:3857/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://data.linz.govt.nz/">LINZ</a>'
+        });
+
+        var googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3']
+        });
+
+        var googleStreets = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            subdomains:['mt0','mt1','mt2','mt3']
+        });
+
+        
+        
+        
+
+        var baseMaps = {
+            "OSM": osm,
+            "Topo50": topo50,
+            "Topo50 2009": topo50_2009,
+            "NZMS 1999": nzms_1999,
+            "NZMS 1989": nzms_1989,
+            "NZMS 1979": nzms1_1979,
+            "NZMS 1969": nzms1_1969,
+            "NZMS 1959": nzms1_1959,
+            "NZMS 1949": nzms15_1949,
+            "NZMS 1939": nzms13_1939,
+            "NZMS 1929": nzms13_1929,
+            "NZMS 1919": nzms13_1919,
+            "NZMS 1909": nzms13_1909,
+            "NZMS 1899": nzms13_1899,
+            "LINZ 10m Imagery": linz_10m_imagery,
+            "Google Satellite": googleSat,
+            "Google Streets": googleStreets
+        };
+
+        
+        
+        const dataHutBaggerHuts = fetchDataHutBaggerHuts();
+        
+        const dataDOCTracks = fetchDataDOCTracks();
+        
+
+        var hutbaggerHutLayer = createHutBaggerMarkerLayer(dataHutBaggerHuts);
+        var docTrackLayer = createDOCTrackMarkerLayer(dataDOCTracks);
+        
+        function createWACLayer(n, color, name) {
+            var wac_layer = L.esri.featureLayer({
+                url: "https://maps.herengaanuku.govt.nz/maps/rest/services/Public_Access_Areas/MapServer/"+n,
+                style: function () {
+                    return { color: color, weight: 2 };
+                },
+                onEachFeature: function (feature, layer) {
+                    layer.bindPopup(function (layer) {
+                        return "<b>" + name + "</b><br><a href=\"https://www.herengaanuku.govt.nz/types-of-access/what-forms-of-legal-public-access-are-available-in-new-zealand\">Details</a>";
+                    });
+                }
+            });
+            return wac_layer;
+        };
+
+
+        var roadParcels = createWACLayer("0", "#b090c2", "Road Parcel");
+        var walkwayEasements = createWACLayer("1", "#ff0000", "Walkway Easement");
+        var reserveLand = createWACLayer("3", "#00ff00", "Reserve Land");
+        var councilParksAndReserves = createWACLayer("4", "#00ff00", "Council Parks And Reserves");
+        var esplanadeStrips = createWACLayer("5", "#0000ff", "Esplanade Strip");
+        var esplanadeReserves = createWACLayer("6", "#ff00ff", "Esplanade Reserve");
+        var PAEeasemant = createWACLayer("8", "#ffff00", "PAE Easement");
+        var PAEeasemantLinear = createWACLayer("9", "#ffff00", "PAE Easement Linear");
+        var DOCPublicConservationLand = createWACLayer("10", "#00ffff", "DOC Public Conservation Land");
+        var DOC_EasementInGross = createWACLayer("17", "#ff9900", "DOC Easement In Gross");
+        var publicRightOfWay = createWACLayer("18", "#ff00ff", "Public Right Of Way");
+        var accessStrip = createWACLayer("19", "#ff00ff", "Access Strip");
+
+        var wac_layers = L.layerGroup([roadParcels, walkwayEasements, reserveLand, councilParksAndReserves, esplanadeStrips, esplanadeReserves, PAEeasemant, PAEeasemantLinear, DOCPublicConservationLand, DOC_EasementInGross, publicRightOfWay, accessStrip]);
+
+
+        var strava = L.tileLayer(getCookie('strava'), {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.strava.com/">Strava</a>'
+        });
+        function setupStrava() {
+            url = prompt("Paste in the URL you get from the below exstension:\nhttps://github.com/zekefarwell/josm-strava-heatmap");
+            if (url) {
+                strava.setUrl(convertStravaTMSToXYZ(url));
+                setCookie("strava", url, 30);
+            };
+        }
+
+        var userUploaded = L.layerGroup();
+        var input = L.DomUtil.create('input', '');
+        input.type = 'file';
+        input.style.display = 'none';  // Hide the input element
+        input.accept = '.geojson';  // Only accept GeoJSON files
+
+        // Add an event listener to the input element that reads the file when a file is selected
+        input.addEventListener('change', function() {
+            var file = this.files[0];  // Get the selected file
+
+            // Create a new FileReader object
+            var reader = new FileReader();
+
+            // Add an event listener to the FileReader that adds the GeoJSON data to the map when the file is read
+            reader.addEventListener('load', function() {
+                var geojson = JSON.parse(reader.result);  // Parse the file's contents as JSON
+
+                // Add the GeoJSON data to the map
+                L.geoJSON(geojson).addTo(userUploaded);
+                userUploaded.addTo(mainMap);
+            });
+
+            // Read the file as text
+            reader.readAsText(file);
+        });
+
+        
+        overlayMaps = {
+            "HutBagger": hutbaggerHutLayer,
+            "DOC Tracks": docTrackLayer,
+            "Strava(<a id=\"strava_setup\" href=\"#\">Setup</a>)": strava,
+            "User Uploaded(<a id=\"user_upload\" href=\"#\">Upload</a>)": userUploaded,
+            "All Walking Access Commission": wac_layers,
+            "-Road Parcels": roadParcels,
+            "-Walkway Easements": walkwayEasements,
+            "-Reserve Land": reserveLand,
+            "-Council Parks And Reserves": councilParksAndReserves,
+            "-Esplanade Strips": esplanadeStrips,
+            "-Esplanade Reserves": esplanadeReserves,
+            "-PAE": PAEeasemant,
+            "-PAE Linear": PAEeasemantLinear,
+            "-DOC Public Conservation Land": DOCPublicConservationLand,
+            "-DOC Easement In Gross": DOC_EasementInGross,
+            "-Public Right Of Way": publicRightOfWay,
+            "-Access Strip": accessStrip,
+            
+        };
+
+        L.control.layers(baseMaps, overlayMaps, {position: 'bottomright'}).addTo(mainMap);
+
+
+        var drawnFeatures = new L.FeatureGroup();
+        drawnFeatures.addTo(mainMap);
+
+        var drawControl = new L.Control.Draw({
+            draw: {
+                polygon: {
+                    shapeOptions: {
+                        color: colorValue
+                    }
+                },
+                polyline: {
+                    shapeOptions: {
+                        color: colorValue
+                    }
+                },
+                circle: {
+                    shapeOptions: {
+                        color: colorValue
+                    }
+                },
+                rectangle: {
+                    shapeOptions: {
+                        color: colorValue
+                    }
+                }
+            },
+            edit: {
+                featureGroup: drawnFeatures
+            }
+        });
+
+    
+        mainMap.on('draw:created', function (e) {
+            var type = e.layerType;
+            var layer = e.layer;
+
+            if (type === 'marker') {
+                var text = prompt("Enter a label for the marker");
+                if (text) {
+                    layer.bindTooltip(text, {permanent: true});
+                }
+            }
+
+            drawnFeatures.addLayer(layer);
+        });
+
+        L.Control.ColorPicker = L.Control.extend({
+            onAdd: function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+        
+                var input = L.DomUtil.create('input', '', container);
+                input.type = 'color';  // Set the button to be a color input
+                input.style.backgroundColor = 'white';
+                input.style.width = '30px';
+                input.style.height = '30px';
+                input.value = colorValue;  // Set the default color to red
+                
+
+                L.DomEvent.on(input, 'change', function() {
+                    colorValue = input.value;
+                    drawControl.remove();
+                    drawControl = new L.Control.Draw({
+                        draw: {
+                            polygon: {
+                                shapeOptions: {
+                                    color: colorValue
+                                }
+                            },
+                            polyline: {
+                                shapeOptions: {
+                                    color: colorValue
+                                }
+                            },
+                            circle: {
+                                shapeOptions: {
+                                    color: colorValue
+                                }
+                            },
+                            rectangle: {
+                                shapeOptions: {
+                                    color: colorValue
+                                }
+                            }
+                        },
+                        edit: {
+                            featureGroup: drawnFeatures
+                        }
+                    });
+                    drawControl.addTo(map);
+                });
+        
+                L.DomEvent.on(container, 'click', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'mousedown', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'dblclick', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'mousewheel', L.DomEvent.stopPropagation);
+        
+                return container;
+            },
+            onRemove: function(map) {
+                // Nothing to do here
+            }
+        });
+
+        L.control.colorPicker = function(opts) {
+            return new L.Control.ColorPicker(opts);
+        }
+
+        L.Control.DownloadGeojson = L.Control.extend({
+            onAdd: function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+        
+                var button = L.DomUtil.create('button', '', container);
+                button.innerHTML = '💾';
+                button.style.width = '30px';
+                button.style.height = '30px';
+                button.style.backgroundColor = 'white';
+                button.style.border = '1px solid #ccc';
+                button.style.borderRadius = '4px';
+                button.style.cursor = 'pointer';
+                button.style.fontSize = '17px';
+        
+                L.DomEvent.on(button, 'click', function() {
+                    var geoJSON = drawnFeatures.toGeoJSON();
+                    var geoJSONString = JSON.stringify(geoJSON);
+                    downloadGeoJSON('drawn_features.geojson', geoJSONString);
+                });
+        
+                L.DomEvent.on(container, 'click', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'mousedown', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'dblclick', L.DomEvent.stopPropagation);
+                L.DomEvent.on(container, 'mousewheel', L.DomEvent.stopPropagation);
+        
+                return container;
+            },
+            onRemove: function(map) {
+                // Nothing to do here
+            }
+        });
+
+        L.control.downloadGeojson = function(opts) {
+            return new L.Control.DownloadGeojson(opts);
+        }
+
+
+
+        var colorPicker = L.control.colorPicker({ position: 'topleft' }).addTo(mainMap);
+        var downloadControl = L.control.downloadGeojson({ position: 'topleft' }).addTo(mainMap);
+        drawControl.addTo(mainMap);
+
+        var strava_link = document.getElementById('strava_setup');
+        L.DomEvent.on(strava_link, 'click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            L.DomEvent.preventDefault(e);
+            setupStrava();
+            strava.addTo(mainMap);
+        });
+
+        var user_upload = document.getElementById('user_upload');
+        L.DomEvent.on(user_upload, 'click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            L.DomEvent.preventDefault(e);
+            input.click();
+        });
+
+
+
+
+
+
+
+    </script>
+
+</html>
